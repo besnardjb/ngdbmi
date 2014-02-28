@@ -10,6 +10,12 @@
  * 
  */
  
+ /*
+  * GDB/MI specs can be found at:
+  * https://sourceware.org/gdb/current/onlinedocs/gdb/GDB_002fMI.html#GDB_002fMI
+  */
+ 
+ 
  /*###############################################################
   #                   GDB WRAPPER DEFINITION                     #
   # Defines how gdbMI is interfaced with the undelying gdb       #
