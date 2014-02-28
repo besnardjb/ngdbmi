@@ -1,0 +1,22 @@
+{
+  "name": "ngdbmi",
+  "description": "A node.js based implementation of the GDB/MI interface",
+  "version": "0.0.1",
+  "author": {
+    "name": "Jean-Baptiste BESNARD"
+  },
+  "homepage": "https://github.com/besnardjb/ngdbmi/wiki",
+  "bugs": "https://github.com/besnardjb/ngdbmi/issues",
+  "keywords": [
+    "gdb",
+    "Machine interface"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/besnardjb/ngdbmi.git"
+  },
+  "engines": {
+    "node": ">=0.1.90"
+  },
+  "main": "gdbMI"
+}
