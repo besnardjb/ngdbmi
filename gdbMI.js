@@ -136,6 +136,8 @@ function gdbProcessWrapper( command_and_args )
   # of the gdb/MI interface it is not intended for state handling #
   #################################################################*/
 
+var events = require('events');
+
 /* Utilities */
 
 /* Yes javascript does not handle string subscripts ... */
@@ -257,17 +259,17 @@ function gdbMI( gdbWrapper, command_and_args, options )
 
 	gdbMI.prototype.onClose = function( return_code, signal )
 	{
-		console.log("GDB closed\n");
+		this.emit("closed",  return_code, signal);
 	}
 	
 	gdbMI.prototype.onExit = function( return_code, signal )
 	{
-		console.log("GDB exited\n");
+		this.emit("exited",  return_code, signal);
 	}
 
 	gdbMI.prototype.onError = function( error )
 	{
-		console.log("ERROR\n");
+		this.emit("gdbError",  error);
 	}
 	
 	/* Option parsing */
@@ -433,6 +435,7 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			/* console-stream-output */
 			case "~" : /* GDB output as it would be displayed normally */
 				this.pushLineAndTruncate( this.gdb_log, line.slice(1), this.gdb_log_max_len, true );
+				this.emit("gdbOutput", line );
 			break;
 			
 			/* status-async-output  */
@@ -449,12 +452,8 @@ function gdbMI( gdbWrapper, command_and_args, options )
 						this.pid_list.push( this.gdb_state.status.pid );
 					}
 				}
-
-				if( this.notify_handler )
-				{
-					(this.notify_handler)(this.gdb_state);
-				}
 				
+				this.emit("notify", this.gdb_state );			
 			break;
 			
 			/*  GDB state */
@@ -464,6 +463,11 @@ function gdbMI( gdbWrapper, command_and_args, options )
 				/* We only call termination handler when we are sure we can enter next command */
 				if( this.gdb_state.state != "running" )
 					this.callTerminationHandler( this.gdb_state );
+				
+				if( this.gdb_state.state == "error" )
+					this.emit("gdbError", this.gdb_state );
+
+				this.emit("ready", this.gdb_state);
 			break;
 			
 			/* target-stream-output */
@@ -471,7 +475,7 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			default:
 				/* Basic output from the program */
 				this.pushLineAndTruncate( this.app_log, line, this.app_log_max_len );
-				console.log( line );
+				this.emit("appOutput", line );
 		}
 		
 		
@@ -498,7 +502,7 @@ function gdbMI( gdbWrapper, command_and_args, options )
 		 * 
 		 * TODO find a cleaner versiojn using -process-interrupt ? 
 		 * 
-		 * gdb.command("-exec-interrupt", handler);
+		 * this.command("-exec-interrupt", handler);
 		 * */
 		var i;
 
@@ -510,42 +514,42 @@ function gdbMI( gdbWrapper, command_and_args, options )
 
 	gdbMI.prototype.run = function (handler)
 	{
-		gdb.command("-exec-run", handler);
+		this.command("-exec-run", handler);
 	}
 	
 	gdbMI.prototype.continue = function (handler)
 	{
-		gdb.command("-exec-continue", handler);
+		this.command("-exec-continue", handler);
 	}
 	
 	gdbMI.prototype.finish = function (handler)
 	{
-		gdb.command("-exec-finish", handler);
+		this.command("-exec-finish", handler);
 	}
 	
 	gdbMI.prototype.step = function (handler)
 	{
-		gdb.command("-exec-step", handler);
+		this.command("-exec-step", handler);
 	}
 	
 	gdbMI.prototype.stepInstruction = function (handler)
 	{
-		gdb.command("-exec-step-instruction", handler);
+		this.command("-exec-step-instruction", handler);
 	}
 	
 	gdbMI.prototype.next = function (handler)
 	{
-		gdb.command("-exec-next", handler);
+		this.command("-exec-next", handler);
 	}
 	
 	gdbMI.prototype.nextInstruction = function (handler)
 	{
-		gdb.command("-exec-next-instruction", handler);
+		this.command("-exec-next-instruction", handler);
 	}
 	
 	gdbMI.prototype.retrun = function (handler)
 	{
-		gdb.command("-exec-return", handler);
+		this.command("-exec-return", handler);
 	}
 	
 	gdbMI.prototype.jump = function (location, handler)
@@ -555,7 +559,7 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			throw("Wrong argument type");
 		}
 		
-		gdb.command("-exec-jump " + location, handler);
+		this.command("-exec-jump " + location, handler);
 	}
 	
 	gdbMI.prototype.execUntil = function (location, handler)
@@ -565,7 +569,7 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			throw("Wrong argument type");
 		}
 		
-		gdb.command("-exec-until " + location, handler);
+		this.command("-exec-until " + location, handler);
 	}
 
 	/*#######################
@@ -584,7 +588,7 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			throw("Wrong argument type");
 		}
 		
-		gdb.command("-break-after " + number + " " + count , handler);
+		this.command("-break-after " + number + " " + count , handler);
 	}
 	
 	gdbMI.prototype.breakCommand = function (number, commands , handler)
@@ -599,7 +603,7 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			throw("Wrong argument type");
 		}
 		
-		gdb.command("-break-command " + number + " " + commands , handler);
+		this.command("-break-command " + number + " " + commands , handler);
 	}
 		
 	gdbMI.prototype.breakCondition = function (number, expr , handler)
@@ -614,7 +618,7 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			throw("Wrong argument type");
 		}
 		
-		gdb.command("-break-condition " + number + " " + expr , handler);
+		this.command("-break-condition " + number + " " + expr , handler);
 	}
 	
 			
@@ -625,7 +629,7 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			throw("Wrong argument type");
 		}
 		
-		gdb.command("-break-delete " + numbers , handler);
+		this.command("-break-delete " + numbers , handler);
 	}
 			
 	gdbMI.prototype.breakDisable = function (numbers , handler)
@@ -635,7 +639,7 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			throw("Wrong argument type");
 		}
 		
-		gdb.command("-break-disable " + numbers , handler);
+		this.command("-break-disable " + numbers , handler);
 	}
 			
 	gdbMI.prototype.breakEnable = function (numbers , handler)
@@ -645,7 +649,7 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			throw("Wrong argument type");
 		}
 		
-		gdb.command("-break-enable " + numbers , handler);
+		this.command("-break-enable " + numbers , handler);
 	}
 		
 	gdbMI.prototype.breakInfo = function (number , handler)
@@ -655,13 +659,13 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			throw("Wrong argument type");
 		}
 		
-		gdb.command("-break-info " + number , handler);
+		this.command("-break-info " + number , handler);
 	}
 		
 	gdbMI.prototype.breakList = function ( handler)
 	{
 
-		gdb.command("-break-list" , handler);
+		this.command("-break-list" , handler);
 	}
 
 	gdbMI.prototype.breakInsert = function (location, options , handler)
@@ -728,7 +732,7 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			args += " -p " + options.threadId;
 		}
 		
-		gdb.command("-break-insert " + args + " " + location , handler);
+		this.command("-break-insert " + args + " " + location , handler);
 	}
 
 
@@ -796,7 +800,7 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			args += " -p " + options.threadId;
 		}
 		
-		gdb.command("-dprintf-insert " + args + " " + location + " " + format + " " +  arguments, handler);
+		this.command("-dprintf-insert " + args + " " + location + " " + format + " " +  arguments, handler);
 	}
 			
 	gdbMI.prototype.breakPasscount = function (number, passcount, handler)
@@ -811,7 +815,7 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			throw("Wrong argument type");
 		}
 		
-		gdb.command("-break-passcount " + number + " " + passcount , handler);
+		this.command("-break-passcount " + number + " " + passcount , handler);
 	}
 	
 			
@@ -835,7 +839,7 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			break;
 		}
 		
-		gdb.command("-break-watch " + mode + " " + location , handler);
+		this.command("-break-watch " + mode + " " + location , handler);
 	}
 
 	/*#######################
@@ -862,7 +866,7 @@ function gdbMI( gdbWrapper, command_and_args, options )
 		if( options.disabled == true )
 			args += " -d";
 	
-		gdb.command("-catch-load " + args + " " + regexp , handler);
+		this.command("-catch-load " + args + " " + regexp , handler);
 	}
 	
 	gdbMI.prototype.catchUnload = function (regexp, options, handler)
@@ -885,7 +889,7 @@ function gdbMI( gdbWrapper, command_and_args, options )
 		if( options.disabled == true )
 			args += " -d";
 	
-		gdb.command("-catch-unload " + args + " " + regexp , handler);
+		this.command("-catch-unload " + args + " " + regexp , handler);
 	}
 
 	/*#######################
@@ -899,7 +903,7 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			throw("Wrong argument type");
 		}
 		
-		gdb.command("-exec-arguments " + args , handler);
+		this.command("-exec-arguments " + args , handler);
 	} 
 	 
 	gdbMI.prototype.setWorkingDirectory = function (wdir , handler)
@@ -909,7 +913,7 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			throw("Wrong argument type");
 		}
 		
-		gdb.command("-environment-cd " + wdir , handler);
+		this.command("-environment-cd " + wdir , handler);
 	} 
 	 	
 	 
@@ -927,7 +931,7 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			args += " -r";
 		}
 		
-		gdb.command("-environment-directory " + args + " " + paths , handler);
+		this.command("-environment-directory " + args + " " + paths , handler);
 	} 
 	 
 	gdbMI.prototype.setObjectPath= function (paths, reset, handler)
@@ -944,12 +948,12 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			args += " -r";
 		}
 		
-		gdb.command("-environment-path " + args + " " + paths , handler);
+		this.command("-environment-path " + args + " " + paths , handler);
 	} 
 	 
 	gdbMI.prototype.pwd= function ( handler)
 	{	
-		gdb.command("-environment-pwd" , handler);
+		this.command("-environment-pwd" , handler);
 	}
 
 	/*#######################
@@ -970,12 +974,12 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			args = id;
 		}
 		
-		gdb.command("-thread-info " + args , handler);
+		this.command("-thread-info " + args , handler);
 	} 
 	 
 	gdbMI.prototype.threadListIds= function (id, handler)
 	{
-		gdb.command("-thread-list-ids" , handler);
+		this.command("-thread-list-ids" , handler);
 	}
 	
 	gdbMI.prototype.threadSelect = function (id , handler)
@@ -985,7 +989,7 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			throw("Wrong argument type");
 		}
 		
-		gdb.command("-thread-select " + id , handler);
+		this.command("-thread-select " + id , handler);
 	} 
 
 	/*#######################
@@ -994,7 +998,7 @@ function gdbMI( gdbWrapper, command_and_args, options )
 	 
 	gdbMI.prototype.frame = function ( handler)
 	{
-		gdb.command("-stack-info-frame" , handler);
+		this.command("-stack-info-frame" , handler);
 	}
 	 
 	gdbMI.prototype.stackDepth = function (maxDepth, handler)
@@ -1011,7 +1015,7 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			args = maxDepth;
 		}
 		
-		gdb.command("-stack-info-depth " + args , handler);
+		this.command("-stack-info-depth " + args , handler);
 	}
 	
 	gdbMI.prototype.stackListArguments = function (printValues, options, handler)
@@ -1063,7 +1067,7 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			hf = options.highFrame;
 		}
 		
-		gdb.command("-stack-list-arguments " + skip + " " + print + " " + lf + " " + hf, handler);
+		this.command("-stack-list-arguments " + skip + " " + print + " " + lf + " " + hf, handler);
 	}
 
 	gdbMI.prototype.stackListFrames = function (options, handler)
@@ -1092,7 +1096,7 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			hf = options.highFrame;
 		}
 		
-		gdb.command("-stack-list-frames " + lf + " " + hf, handler);
+		this.command("-stack-list-frames " + lf + " " + hf, handler);
 	}
 
 	
@@ -1126,7 +1130,7 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			skip = "--skip-unavailable";
 		}
 		
-		gdb.command("-stack-list-locals " + skip + " " + print, handler);
+		this.command("-stack-list-locals " + skip + " " + print, handler);
 	}
 	
 	gdbMI.prototype.stackListVariables = function (printValues, options, handler)
@@ -1159,7 +1163,7 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			skip = "--skip-unavailable";
 		}
 		
-		gdb.command("-stack-list-variables " + skip + " " + print, handler);
+		this.command("-stack-list-variables " + skip + " " + print, handler);
 	}
 
 	gdbMI.prototype.frameSelect = function (id , handler)
@@ -1169,7 +1173,7 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			throw("Wrong argument type");
 		}
 		
-		gdb.command("-stack-select-frame " + id , handler);
+		this.command("-stack-select-frame " + id , handler);
 	} 
 	
 	/*#######################
@@ -1195,7 +1199,7 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			throw("Wrong argument type");
 		}
 		
-		gdb.command("-symbol-list-lines " + filename , handler);
+		this.command("-symbol-list-lines " + filename , handler);
 	} 
 
 	/*#######################
@@ -1209,7 +1213,7 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			throw("Wrong argument type");
 		}
 		
-		gdb.command("-file-exec-and-symbols " + filename , handler);
+		this.command("-file-exec-and-symbols " + filename , handler);
 	}
 	
 	gdbMI.prototype.executable = function (filename , handler)
@@ -1219,7 +1223,7 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			throw("Wrong argument type");
 		}
 		
-		gdb.command("-file-exec-file " + filename , handler);
+		this.command("-file-exec-file " + filename , handler);
 	}
 	
 	gdbMI.prototype.symbols = function (symbolfile , handler)
@@ -1229,17 +1233,17 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			throw("Wrong argument type");
 		}
 		
-		gdb.command("-file-symbol-file " + symbolfile , handler);
+		this.command("-file-symbol-file " + symbolfile , handler);
 	}
 	
 	gdbMI.prototype.sourceCtx = function (handler)
 	{
-		gdb.command("-file-list-exec-source-file" , handler);
+		this.command("-file-list-exec-source-file" , handler);
 	}
 	
 	gdbMI.prototype.listSourceFiles = function (handler)
 	{
-		gdb.command("-file-list-exec-source-files" , handler);
+		this.command("-file-list-exec-source-files" , handler);
 	}
 
 	/*#######################
@@ -1253,7 +1257,7 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			throw("Wrong argument type");
 		}
 		
-		gdb.command("-target-attach " + pidorfile , handler);
+		this.command("-target-attach " + pidorfile , handler);
 	} 
   
 	gdbMI.prototype.detach = function (pid , handler)
@@ -1263,17 +1267,17 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			throw("Wrong argument type");
 		}
 		
-		gdb.command("-target-detach " + pid , handler);
+		this.command("-target-detach " + pid , handler);
 	}
 
 	gdbMI.prototype.disconnect = function ( handler)
 	{	
-		gdb.command("-target-disconnect" , handler);
+		this.command("-target-disconnect" , handler);
 	} 
 
 	gdbMI.prototype.download = function ( handler)
 	{	
-		gdb.command("-target-download" , handler);
+		this.command("-target-download" , handler);
 	} 
 
 	gdbMI.prototype.targetSelect = function ( type, params, handler)
@@ -1288,7 +1292,7 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			throw("Wrong argument type");
 		}
 		
-		gdb.command("-target-select " + type + " " + params , handler);
+		this.command("-target-select " + type + " " + params , handler);
 	}
 	
 	/*######################
@@ -1306,17 +1310,17 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			throw("Wrong argument type");
 		}
 		
-		gdb.command("-info-gdb-mi-command " + commandWithNoDash , handler);
+		this.command("-info-gdb-mi-command " + commandWithNoDash , handler);
 	} 	
 
 	gdbMI.prototype.listFeature = function (handler)
 	{
-		gdb.command("-list-features" , handler);
+		this.command("-list-features" , handler);
 	} 	
 
 	gdbMI.prototype.listTargetFeature = function (handler)
 	{
-		gdb.command("-list-target-features" , handler);
+		this.command("-list-target-features" , handler);
 	} 	
 
 	/*#######################
@@ -1325,7 +1329,7 @@ function gdbMI( gdbWrapper, command_and_args, options )
 	
 	gdbMI.prototype.exit = function (handler)
 	{
-		gdb.command("-gdb-exit" , handler);
+		this.command("-gdb-exit" , handler);
 	} 		
 
 	gdbMI.prototype.set = function ( name, value, handler)
@@ -1340,7 +1344,7 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			throw("Wrong argument type");
 		}
 		
-		gdb.command("-gdb-set $" + name.trim() + "=\"" + value.trim() + "\"" , handler);
+		this.command("-gdb-set $" + name.trim() + "=\"" + value.trim() + "\"" , handler);
 	}
 	
 	gdbMI.prototype.show = function ( name , handler)
@@ -1350,12 +1354,12 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			throw("Wrong argument type");
 		}
 		
-		gdb.command("-gdb-show " + name , handler);
+		this.command("-gdb-show " + name , handler);
 	}
 	
 	gdbMI.prototype.version = function (handler)
 	{
-		gdb.command("-gdb-version" , handler);
+		this.command("-gdb-version" , handler);
 	} 	
 	
 	gdbMI.prototype.listThreadGroups = function (options, handler)
@@ -1389,7 +1393,7 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			groups = options.groups;
 		}
 		
-		gdb.command("-list-thread-groups " + args + " " + groups, handler);
+		this.command("-list-thread-groups " + args + " " + groups, handler);
 	}
 
 	
@@ -1400,12 +1404,12 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			throw("Wrong argument type");
 		}
 			
-		gdb.command("-info-os " + type , handler);
+		this.command("-info-os " + type , handler);
 	} 		
 	
 	gdbMI.prototype.addInferior = function ( handler)
 	{	
-		gdb.command("-add-inferior" , handler);
+		this.command("-add-inferior" , handler);
 	} 		
 	
 	gdbMI.prototype.exec = function ( interpreter, command, handler)
@@ -1420,7 +1424,7 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			throw("Wrong argument type");
 		}
 		
-		gdb.command("-interpreter-exec " + interpreter + " " + command , handler);
+		this.command("-interpreter-exec " + interpreter + " " + command , handler);
 	} 
 		
 	gdbMI.prototype.ttySet = function ( tty, handler)
@@ -1430,12 +1434,12 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			throw("Wrong argument type");
 		}
 			
-		gdb.command("-inferior-tty-set " + tty , handler);
+		this.command("-inferior-tty-set " + tty , handler);
 	}
 	
 	gdbMI.prototype.ttyShow = function ( handler)
 	{	
-		gdb.command("-inferior-tty-show" , handler);
+		this.command("-inferior-tty-show" , handler);
 	} 			
 	
 	gdbMI.prototype.enableTimings = function ( truth, handler)
@@ -1447,7 +1451,7 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			t = "no";
 		}
 		
-		gdb.command("-enable-timings " + t , handler);
+		this.command("-enable-timings " + t , handler);
 	} 			
 		
 	/*######################*/
@@ -1481,15 +1485,16 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			this.wrapper.write(command + "\n");
 	}
 
-	gdbMI.prototype.setNotify = function( handler )
-	{
-		this.notify_handler = handler;
-		/* handler(state) */
-	}
-	
 	/* ############################################## */
 	/* ############################################## */
 	/* Constructor */
+	
+	/*
+	 *  Inherit from EventEmitter
+	 */
+	
+	events.EventEmitter.call(this);
+	gdbMI.prototype.__proto__ = events.EventEmitter.prototype;
 	
 	/*
 	 *  gdbWrapper
@@ -1497,7 +1502,7 @@ function gdbMI( gdbWrapper, command_and_args, options )
 	
 	if( !gdbWrapper )
 	{
-		throw("No gdbWrapper provided gdbMI has no associated GDB");
+		gdbWrapper = gdbProcessWrapper;
 	}
 	
 	this.wrapper = new gdbWrapper();
@@ -1569,10 +1574,6 @@ function gdbMI( gdbWrapper, command_and_args, options )
 	 * This handler is provided by command blocks in order
 	 * to signal event completion.*/
 	 this.push_back_handler = undefined;
-	 
-	 /* Notify handler
-	  * called asynchronously to provide suplementary informations*/
-	 this.notify_handler = undefined;
 	
 }
 
