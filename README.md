@@ -1,19 +1,28 @@
-Purpose
---------
+### Purpose
 
-*"Quickly interface node.js to a gdb instance while
-retrieving state informations in JSON."*
+*Quickly interface node.js to a gdb instance while
+retrieving state informations in JSON.*
 
-Overview
---------
+### Warning
 
-ngdbmi is a node.js GDB wrapper based on the GDB/mi interface
+This is an early development version which needs to be further
+tested.
+
+Do not include it in your projects for other purpose
+than testing. Improvements and stabilisation are to come !
+
+### Overview
+
+ngdbmi is a node.js based implementation of the gdb/MI interface
 (see [here](https://sourceware.org/gdb/current/onlinedocs/gdb/GDB_002fMI.html)).
-It allows the wrapping of a GDB instance while providing
-a convenient JSON based output when a event occurs.
+It allows the wrapping a GDB instance while providing
+a JSON based output when a event occurs.
 
-Example
--------
+### Documentation
+
+ngdbmi documentation can be found [here](https://github.com/besnardjb/ngdbmi/wiki/Documentation)
+
+### Example
 
 **Target program:**
 
@@ -39,7 +48,7 @@ int main( int argc, char **argv )
 **ngdbmi based debugger:**
 
 ```JavaScript
-ngdbmi = gdb = require("ngdbmi");
+ngdbmi = require("ngdbmi");
 
 /* Create a new GDB instance over ./a.out with args foo and bar */
 gdb = new ngdbmi("./a.out foo bar");
@@ -67,9 +76,9 @@ gdb.on("gdb", function( line )
 });
 
 /* Gdb close event */
-gdb.on("close", function( line )
+gdb.on("close", function( return_code, signal )
 {
-	console.log( "GDB closed");
+	console.log( "GDB closed RET=" + return_code);
 });
 
 /*
@@ -280,6 +289,6 @@ GDB>"done.\n"
 	}
 }
 /*-------------------------------------*/
-GDB closed
+GDB closed RET=0
 
 ```
