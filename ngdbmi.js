@@ -5,6 +5,9 @@
  * 
  *  2014 Jean-Baptiste BESNARD.
  * 
+ * LICENCE : Cecill-C (fully LGPL compatible)
+ * as found on http://www.cecill.info/
+ * 
  */
  
  /*###############################################################
@@ -52,7 +55,7 @@ function gdbProcessWrapper( command_and_args )
 			throw("No command provided");
 		}
 
-		var gdb_args = [ "--interpreter=mi",'--readnow', "--args" ].concat( cmd );
+		var gdb_args = [ "--interpreter=mi",'--readnow', '--quiet',"--args" ].concat( cmd );
 		
 		
 		try
@@ -96,6 +99,7 @@ function gdbProcessWrapper( command_and_args )
 	gdbProcessWrapper.prototype.onData = function (handler)
 	{
 		this.gdb_instance.stdout.on("data", handler );
+		this.gdb_instance.stderr.on("data", handler );
 		/* handler( data ) */	
 	}
 	
@@ -221,7 +225,7 @@ function removeArrayLabels( args )
 }
 
 
-function gdbMI( gdbWrapper, command_and_args, options )
+function gdbMI( command_and_args, options, gdbWrapper )
 {
 	/* ############################################## */
 	/* ############################################## */	
@@ -259,12 +263,12 @@ function gdbMI( gdbWrapper, command_and_args, options )
 
 	gdbMI.prototype.onClose = function( return_code, signal )
 	{
-		this.emit("closed",  return_code, signal);
+		this.emit("close",  return_code, signal);
 	}
 	
 	gdbMI.prototype.onExit = function( return_code, signal )
 	{
-		this.emit("exited",  return_code, signal);
+		this.emit("exit",  return_code, signal);
 	}
 
 	gdbMI.prototype.onError = function( error )
@@ -386,6 +390,7 @@ function gdbMI( gdbWrapper, command_and_args, options )
 			(to_call)( this.gdb_state );
 		}
 		
+		
 		this.gdb_state.state = "idle";
 	}
 	
@@ -411,33 +416,25 @@ function gdbMI( gdbWrapper, command_and_args, options )
 		target.slice( -maxlen ); 
 	}
 	
-	gdbMI.prototype.pushLine = function( line )
+	gdbMI.prototype.pushLine = function( fullline )
 	{
 		
-		if( !line.length )
+		if( !fullline.length )
 		{
 			/* Nothing to do */
 			return;
 		}
 		
-		var line_descriptor = line[0];
+		var line_descriptor = fullline[0];
 		
-		//console.log(line);
-		
-		var line = line.slice(1);
+		//console.log(fullline);
+
+		var line = fullline.slice(1);
 		
 		this.parseState( line );
 
 		switch( line_descriptor )
-		{
-			/* log-stream-output */
-			case "&" : /* Messages from GDB internals */
-			/* console-stream-output */
-			case "~" : /* GDB output as it would be displayed normally */
-				this.pushLineAndTruncate( this.gdb_log, line.slice(1), this.gdb_log_max_len, true );
-				this.emit("gdbOutput", line );
-			break;
-			
+		{			
 			/* status-async-output  */
 			case "+" : /* Async output progress for slow operations (optionnal) */
 			case "=" : /* Async output notify suplementary informations */
@@ -470,15 +467,22 @@ function gdbMI( gdbWrapper, command_and_args, options )
 				this.emit("ready", this.gdb_state);
 			break;
 			
+			/* log-stream-output */
+			case "&" : /* Messages from GDB internals */
+			/* console-stream-output */
+			case "~" : /* GDB output as it would be displayed normally */
+				this.pushLineAndTruncate( this.gdb_log, line.slice(1), this.gdb_log_max_len, true );
+				this.emit("gdb", line );
+			break;
+			
 			/* target-stream-output */
 			case "@":
 			default:
 				/* Basic output from the program */
+				
 				this.pushLineAndTruncate( this.app_log, line, this.app_log_max_len );
-				this.emit("appOutput", line );
+				this.emit("app", fullline );
 		}
-		
-		
 	}
 	
 	/* ***************************************************
@@ -1496,6 +1500,14 @@ function gdbMI( gdbWrapper, command_and_args, options )
 	{
 		this.gdb_state.state = "command";
 		this.gdb_state.status = {};
+		
+		if( handler && (typeof(handler) != "function") )
+		{
+			console.log("Handler : ");
+			console.dir( handler );
+			throw "Supplied argument is not an handler";
+		}
+		
 		this.push_back_handler = handler;
 		
 		if( command.length )
@@ -1543,7 +1555,7 @@ function gdbMI( gdbWrapper, command_and_args, options )
 	});
 	this.wrapper.onExit( function( return_code, signal )
 	{
-		pthis.onClose( return_code, signal );
+		pthis.onExit( return_code, signal );
 	});
 	this.wrapper.onError( function( error )
 	{
