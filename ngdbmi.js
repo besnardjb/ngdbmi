@@ -27,7 +27,7 @@ var exec = require('child_process').exec;
  * 
  *  .init( program_and_args ) : called to instantiate the interface
  *  .write() : used to send data to the gdb process
- *  .interrupt() : sends a SIGINT to a PID
+ *  .interrupt() : sends a SIGINT to a PID (to enhance ...)
  *  .onData() : calls the wrapper function when data are available
  *  .onClose() : calls the wrapper function when the stream ends
  *  .onError() : calls the wrapper function when an error occurs
@@ -52,7 +52,7 @@ function gdbProcessWrapper( command_and_args )
 			throw("No command provided");
 		}
 
-		var gdb_args = [ "--interpreter=mi",'--readnow',"--quiet", "--args" ].concat( cmd );
+		var gdb_args = [ "--interpreter=mi",'--readnow', "--args" ].concat( cmd );
 		
 		
 		try
@@ -453,7 +453,7 @@ function gdbMI( gdbWrapper, command_and_args, options )
 					}
 				}
 				
-				this.emit("notify", this.gdb_state );			
+				this.emit("notify", this.gdb_state );
 			break;
 			
 			/*  GDB state */
@@ -490,8 +490,13 @@ function gdbMI( gdbWrapper, command_and_args, options )
 	/*#######################
 	# Process management    #
 	#######################*/
-	 
-	gdbMI.prototype.interrupt = function (handler)
+
+	gdbMI.prototype.execInterrupt = function ( handler)
+	{
+		this.command("-exec-interrupt", handler);
+	}
+
+	gdbMI.prototype.interrupt = function (pid, handler)
 	{
 		this.command("", handler );
 		
@@ -508,7 +513,19 @@ function gdbMI( gdbWrapper, command_and_args, options )
 
 		for( i = 0 ; i < this.pid_list.length; i++ )
 		{
-			this.wrapper.interrupt( this.pid_list[i] );
+			if( !pid )
+			{
+				this.wrapper.interrupt( this.pid_list[i] );
+			}
+			else
+			{
+				/* Make sure that we can only interrupt processes
+				 * which are in the 'children' thread group list */
+				if( this.pid_list[i] == pid )
+				{
+					this.wrapper.interrupt( this.pid_list[i] );
+				}
+			}
 		}
 	}
 
