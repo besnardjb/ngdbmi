@@ -446,6 +446,50 @@ function commandList()
 		
 		return cmd.generate( args );
 	}
+	
+	commandList.prototype.dumpCommandList = function()
+	{
+		var i,j;
+		
+		for( e in this.commandList)
+		{
+			if( !e )
+				continue;
+			
+			var c = this.commandList[e];	
+			
+			console.log("***\n");
+			console.log("* **" + c.name + "** (" + c.action_name + "):" );
+			
+			for( j = 0 ; j < c.params.length ; j++ )
+			{
+				var a = c.params[j];
+				
+				var args_req = "";
+				
+				if( (a.has_arg == "argOnly")
+				||  (a.has_arg == "keyAndArg") )
+				{
+					args_req = " (value required)"
+				}
+				else
+				{
+					args_req = " (Boolean switch)"
+				}
+				
+				if( !a.required )
+					console.log("   * **[" + a.name + "]**" + args_req + ":" );
+				else
+					console.log("   * **" + a.name + "**" + args_req + ":" );
+			}
+			
+			console.log("\n\n");
+			
+		}
+		
+		
+	}
+	
 	/* ############################################## */
 	/* ############################################## */
 	/* Constructor */
@@ -512,7 +556,7 @@ function commandList()
 	this.insert( new command( "breakList" , "-break-list", [] ) );
 	this.insert( new command( "breakInsert" , "-break-insert", 
 	[
-		new commandParam( "teporary", false, "-t", "keyOnly", ["number"] ),
+		new commandParam( "temporary", false, "-t", "keyOnly", ["number"] ),
 		new commandParam( "hardware", false, "-h", "keyOnly", ["number"] ),
 		new commandParam( "force", false, "-f", "keyOnly", ["number"] ),
 		new commandParam( "disabled", false, "-d", "keyOnly", ["number"] ),
@@ -524,7 +568,7 @@ function commandList()
 	] ) );
 	this.insert( new command( "dprintf" , "-dprintf-insert", 
 	[
-		new commandParam( "teporary", false, "-t", "keyOnly", ["number"] ),
+		new commandParam( "temporary", false, "-t", "keyOnly", ["number"] ),
 		new commandParam( "force", false, "-f", "keyOnly", ["number"] ),
 		new commandParam( "disabled", false, "-d", "keyOnly", ["number"] ),
 		new commandParam( "condition", false, "-a", "keyAndArg", ["string"] ),
@@ -1021,6 +1065,24 @@ function gdbMI( command_and_args, options, gdbWrapper )
 	* Gdb actions
 	*
 	*****************************************************/
+	/* Handlers management */
+	gdbMI.prototype.sendcommand = function( command, handler )
+	{
+		this.gdb_state.state = "command";
+		this.gdb_state.status = {};
+		
+		if( handler && (typeof(handler) != "function") )
+		{
+			console.log("Handler : ");
+			console.dir( handler );
+			throw "Supplied argument is not an handler";
+		}
+		
+		this.push_back_handler = handler;
+		
+		if( command.length )
+			this.wrapper.write(command + "\n");
+	}
 
 	this.commands = new commandList();
 	
@@ -1103,24 +1165,6 @@ function gdbMI( command_and_args, options, gdbWrapper )
 		return rebuildString( this.app_log, length );	
 	}
 	
-	/* Handlers management */
-	gdbMI.prototype.sendcommand = function( command, handler )
-	{
-		this.gdb_state.state = "command";
-		this.gdb_state.status = {};
-		
-		if( handler && (typeof(handler) != "function") )
-		{
-			console.log("Handler : ");
-			console.dir( handler );
-			throw "Supplied argument is not an handler";
-		}
-		
-		this.push_back_handler = handler;
-		
-		if( command.length )
-			this.wrapper.write(command + "\n");
-	}
 
 	/* ############################################## */
 	/* ############################################## */

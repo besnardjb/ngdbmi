@@ -91,12 +91,14 @@ gdb.command("breakInsert", function (state)
 	console.log( JSON.stringify(state, null, "\t") );
 	console.log( "/*-----------------------------------------*/" );
 	
+	/* Launch the debugee */
 	gdb.command("run", function( state )
 	{
 		console.log( "/*---------------------RUN-----------------*/" );
 		console.log( JSON.stringify(state, null, "\t") );
 		console.log( "/*-----------------------------------------*/" );
 			
+		/* Generate a backtrace */
 		gdb.command("stackListFrames", function( state )
 		{
 			console.log( "/*----------------FRAMES-------------------*/" );
@@ -114,12 +116,6 @@ gdb.command("breakInsert", function (state)
 ```
 **output when run:**
 ```JSON
-{ name: 'location',
-  required: true,
-  key: '',
-  has_arg: 'argOnly',
-  prefix: ' ',
-  arg_type: [ 'string' ] }
 -break-insert  bar
 /*-------------------NOTIFY----------------*/
 {

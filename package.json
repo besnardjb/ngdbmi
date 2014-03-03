@@ -8,6 +8,7 @@
   "homepage": "https://github.com/besnardjb/ngdbmi/wiki",
   "bugs": "https://github.com/besnardjb/ngdbmi/issues",
   "keywords": [
+    "debugger",
     "gdb",
     "Machine interface"
   ],
