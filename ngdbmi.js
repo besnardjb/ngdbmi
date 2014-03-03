@@ -53,7 +53,8 @@ function gdbProcessWrapper( command_and_args )
 	{
 		if( !command_and_args )
 			command_and_args = "";
-
+		
+		/* Split the command to separate args */
 		var cmd = command_and_args.trim().split(" ");
 		
 		if( cmd.length == 0 )
@@ -61,9 +62,10 @@ function gdbProcessWrapper( command_and_args )
 			throw("No command provided");
 		}
 
+		/* Build arg array */
 		var gdb_args = [ "--interpreter=mi",'--readnow', '--quiet',"--args" ].concat( cmd );
 		
-		
+		/* Start the process */
 		try
 		{
 			this.gdb_instance = spawn( "gdb", gdb_args, {detached : true} );
@@ -78,7 +80,7 @@ function gdbProcessWrapper( command_and_args )
 		return 0;
 	}
 	
-	/* Write */
+	/* Write to GDB instance */
 	gdbProcessWrapper.prototype.write = function( data )
 	{
 		try
@@ -95,13 +97,16 @@ function gdbProcessWrapper( command_and_args )
 		return 0;
 	};
 	
+	/* Send a signal to a PID
+	 * This is a workaround as node.js kill
+	 * does not work maybe some signal masking... */
 	gdbProcessWrapper.prototype.interrupt = function( pid )
 	{
 		exec("kill -s 2 " + pid);
 		return 0;
 	};
 	
-	/* On data */
+	/* On data call those handlers */
 	gdbProcessWrapper.prototype.onData = function (handler)
 	{
 		this.gdb_instance.stdout.on("data", handler );
@@ -148,7 +153,7 @@ function gdbProcessWrapper( command_and_args )
 
 var events = require('events');
 
-/* Utilities */
+/* Utility functions */
 
 /* Yes javascript does not handle string subscripts ... */
 String.prototype.setCharAt = function(index,chr) {
@@ -158,7 +163,8 @@ String.prototype.setCharAt = function(index,chr) {
 	return this.substr(0,index) + chr + this.substr(index+1);
 }
 
-/* Rebuild string from lines with an offset indicator */
+/* Rebuild string from lines with an offset indicator
+ * this is used to rebuild both application and GDB outputs */
 function rebuildString( target_array, count )
 {
 	var ret = "";
@@ -178,7 +184,9 @@ function rebuildString( target_array, count )
 }
 
 
-/* Remove labels inside arrays */
+/* Remove labels inside arrays this is one of the fixes
+ * which has to be applied to GDB output in order
+ * to retrieve plain JSON (GDB puts labels in arrays) */
 function removeArrayLabels( args )
 {
 	/* We now have to handle labels inside arrays */
@@ -188,6 +196,9 @@ function removeArrayLabels( args )
 	var i = 0;
 	for( i = 0 ; i < args.length ; i++ )
 	{
+		/* This is a small state handling 
+		 * in order to see if we are in an array
+		 * and therefore if we have to remove labels */
 		if( args[i] == "[" )
 			t_in_array.push(1);
 		
@@ -197,32 +208,35 @@ function removeArrayLabels( args )
 		if( args[i] == "]" || args[i] == "}" )
 			t_in_array.pop();
 		
+		/* in_array == 1 if we are in an array =) */
 		in_array = t_in_array[ t_in_array.length - 1 ];
 		
-		/* If we encounter a ',"' inside an array delete until the '":' */
+		/* If we encounter a ',"' inside an array delete until the '":' or '"=' */
 		if( in_array && (args[i] == "," || args[i] == "[") && args[i+1] == "\"" )
 		{
 			var k = i;
 			
+			/* Walk the label */
 			while( (k < args.length) 
 				&& (args[k] != ":")
 				&& (args[k] != "=")
 				&& (args[k] != "]") )
+			{
+				k++;
+			}
+			
+			/* if we end on a label end (= or :) then clear it up */
+			if(  args[k] == ":" || args[k] == "=" )
+			{
+				var l;
+				
+				for( l=(i+1) ; l <= k ; l++ )
 				{
-					k++;
+					args = args.setCharAt(l,' ');
 				}
 				
-				if(  args[k] == ":" || args[k] == "=" )
-				{
-					var l;
-					
-					for( l=(i+1) ; l <= k ; l++ )
-					{
-						args = args.setCharAt(l,' ');
-					}
-					
-				}
-			
+			}
+		
 			
 		}
 	}
@@ -332,7 +346,7 @@ function command( name, action_name, params )
 		if( typeof(args) != "object" )
 			throw "Wrong argument type"
 		
-		/* By defaukt we send back the action */
+		/* By default we send back the action */
 		var ret = this.action_name + " ";
 		
 		/* First check that all compulsory args are satisfied */
@@ -354,7 +368,6 @@ function command( name, action_name, params )
 			
 			if( value )
 			{
-				console.log( this.params[i] );
 				par.check( value );
 				
 				/* Here we add a prefix in order to manage the "set" case */
@@ -447,10 +460,13 @@ function commandList()
 		return cmd.generate( args );
 	}
 	
+	/* This was just used to generate the documentation
+	 * further development could lead to an online help ? */
 	commandList.prototype.dumpCommandList = function()
 	{
 		var i,j;
 		
+		/* For each command */
 		for( e in this.commandList)
 		{
 			if( !e )
@@ -458,9 +474,11 @@ function commandList()
 			
 			var c = this.commandList[e];	
 			
+			/* Print its name */
 			console.log("***\n");
 			console.log("* **" + c.name + "** (" + c.action_name + "):" );
 			
+			/* For each arg print them */
 			for( j = 0 ; j < c.params.length ; j++ )
 			{
 				var a = c.params[j];
@@ -874,6 +892,7 @@ function gdbMI( command_and_args, options, gdbWrapper )
 		/* Remove array labels */
 		args = removeArrayLabels(args);
 		
+		/* And wrap in an object */
 		args = "{" + args + "}";
 		
 		
@@ -894,6 +913,7 @@ function gdbMI( command_and_args, options, gdbWrapper )
 		return ret;
 	}
 	
+	/* Extract the state a the beginning of the line */
 	gdbMI.prototype.getState = function( line )
 	{
 		var m = line.match("^([a-z-]*),");
@@ -907,6 +927,7 @@ function gdbMI( command_and_args, options, gdbWrapper )
 			
 		}
 
+		/* Couldn't we merge this with the previous one ? */
 		var m = line.match("^([a-z-]*)$");
 		
 		if( m )
@@ -933,9 +954,7 @@ function gdbMI( command_and_args, options, gdbWrapper )
 		{
 			this.gdb_state.state = state;
 		}
-		
-		//console.log("STATE " + state );
-		
+
 		/* Handle args if present */
 		var m = line.match("^[a-z-]*,(.*)");
 		if( m )
@@ -949,11 +968,6 @@ function gdbMI( command_and_args, options, gdbWrapper )
 	
 	gdbMI.prototype.callTerminationHandler = function()
 	{
-		if( this.gdb_state.state == "idle" )
-		{
-			/* Do not call twice for event */
-			return;
-		}
 		
 		if( this.push_back_handler )
 		{
@@ -964,12 +978,11 @@ function gdbMI( command_and_args, options, gdbWrapper )
 			this.push_back_handler = undefined;
 			(to_call)( this.gdb_state );
 		}
-		
-		
-		this.gdb_state.state = "idle";
+
 	}
 	
-	
+	/* This is an helper function which pushes a limitted number
+	 * of line in an array, to make it act as a FIFO */
 	gdbMI.prototype.pushLineAndTruncate = function( target, line, maxlen, do_cleanup )
 	{
 		
@@ -991,6 +1004,7 @@ function gdbMI( command_and_args, options, gdbWrapper )
 		target.slice( -maxlen ); 
 	}
 	
+	/* This is line entrance point */
 	gdbMI.prototype.pushLine = function( fullline )
 	{
 		
@@ -1002,7 +1016,7 @@ function gdbMI( command_and_args, options, gdbWrapper )
 		
 		var line_descriptor = fullline[0];
 		
-		//console.log(fullline);
+		console.log(fullline);
 
 		var line = fullline.slice(1);
 		
@@ -1031,6 +1045,9 @@ function gdbMI( command_and_args, options, gdbWrapper )
 			/*  GDB state */
 			case "^" : /*  exec-async-output */
 			case "*" : /* Async state change (running, stopped ...) */
+			
+				/* Before doing anything call the 'ready' handler */
+				this.emit("ready", this.gdb_state);
 
 				/* We only call termination handler when we are sure we can enter next command */
 				if( this.gdb_state.state != "running" )
@@ -1038,8 +1055,6 @@ function gdbMI( command_and_args, options, gdbWrapper )
 				
 				if( this.gdb_state.state == "error" )
 					this.emit("gdbError", this.gdb_state );
-
-				this.emit("ready", this.gdb_state);
 			break;
 			
 			/* log-stream-output */
@@ -1056,7 +1071,10 @@ function gdbMI( command_and_args, options, gdbWrapper )
 				/* Basic output from the program */
 				
 				this.pushLineAndTruncate( this.app_log, line, this.app_log_max_len );
-				this.emit("app", fullline );
+				if( line_descriptor == "@" )
+					this.emit("app", line ); // Line stripped of the @
+				else
+					this.emit("app", fullline ); // No descriptor then full line
 		}
 	}
 	
@@ -1113,7 +1131,7 @@ function gdbMI( command_and_args, options, gdbWrapper )
 	/* The interrupt action is still handled by gdbMI */
 	gdbMI.prototype.interrupt = function (pid, handler)
 	{
-		   this.command("", handler );
+		   this.sendcommand("", handler );
 		   
 		   /* Here we send the signal by hand (it seems more reliable)
 			* there is maybe a mismatch with node which is mixed up

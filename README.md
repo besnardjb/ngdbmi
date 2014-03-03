@@ -8,12 +8,12 @@ retrieving state informations in JSON.*
 This is an early development version which needs to be further
 tested.
 
-Do not include it in your projects for other purpose
+For the moment, do not include it in your projects for other purpose
 than testing. Improvements and stabilisation are to come !
 
 ### Overview
 
-ngdbmi is a node.js based implementation of the gdb/MI interface
+ngdbmi is a node.js based gdb wrapper over the gdb/MI interface
 (see [here](https://sourceware.org/gdb/current/onlinedocs/gdb/GDB_002fMI.html)).
 It allows the wrapping a GDB instance while providing
 a JSON based output when a event occurs.
@@ -22,7 +22,7 @@ a JSON based output when a event occurs.
 
 ngdbmi documentation can be found [here](https://github.com/besnardjb/ngdbmi/wiki/Documentation)
 
-### Example
+### Small Example
 
 **Target program:**
 
@@ -293,3 +293,7 @@ GDB>"done.\n"
 GDB closed RET=0
 
 ```
+
+### Licence
+
+ngdbmi is under the [CeCILL-C licence](http://www.cecill.info/index.en.html) which is fully LGPL compatible.

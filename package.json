@@ -1,7 +1,7 @@
 {
   "name": "ngdbmi",
-  "description": "A node.js based implementation of the GDB/MI interface",
-  "version": "0.0.1",
+  "description": "A node.js GDB wrapper over the GDB/MI interface",
+  "version": "0.0.3",
   "author": {
     "name": "Jean-Baptiste BESNARD"
   },

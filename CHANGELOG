@@ -1,0 +1,7 @@
+0.0.3: Version bump because of a PB with NPM
+0.0.2: Small bufixes
+	* Fix a bug in the ready handler (presence of idle states)
+	* Call the ready handler before terminating command (state shadowing)
+	* Add some comments in the code
+0.0.1: Initial version 
+
