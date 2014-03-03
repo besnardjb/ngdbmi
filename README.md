@@ -58,9 +58,9 @@ gdb = new ngdbmi("./a.out foo bar");
 /* Notify event */
 gdb.on("notify", function( state )
 {
-	console.log( "/*----------------NOTIFY---------------*/" );
+	console.log( "/*-------------------NOTIFY----------------*/" );
 	console.log( JSON.stringify(state, null, "\t") );
-	console.log( "/*-------------------------------------*/" );
+	console.log( "/*-----------------------------------------*/" );
 });
 
 /* Application output */
@@ -78,59 +78,61 @@ gdb.on("gdb", function( line )
 /* Gdb close event */
 gdb.on("close", function( return_code, signal )
 {
-	console.log( "GDB closed RET=" + return_code);
+	console.log( "GDB closed RET=" + return_code );
 });
-
 /*
  *  Debug script
  */
 
 /* Lets insert a breakpoint at "bar" */
-gdb.breakInsert("bar", {}, function(state)
+gdb.command("breakInsert", function (state)
 {
-	/* See status message */
-	console.log( "/*------------BREAK INSERT-------------*/" );
+	console.log( "/*----------------BREAKPOINT---------------*/" );
 	console.log( JSON.stringify(state, null, "\t") );
-	console.log( "/*-------------------------------------*/" );
+	console.log( "/*-----------------------------------------*/" );
 	
-	/* Lauch the debugee */
-	gdb.run( function(state)
+	gdb.command("run", function( state )
 	{
-			/* Here we just hit the breakpoint
-			 * as handler is called when we are back in interactive mode*/
+		console.log( "/*---------------------RUN-----------------*/" );
+		console.log( JSON.stringify(state, null, "\t") );
+		console.log( "/*-----------------------------------------*/" );
 			
-			/* See status message */
-			console.log( "/*---------------RUN-------------------*/" );
+		gdb.command("stackListFrames", function( state )
+		{
+			console.log( "/*----------------FRAMES-------------------*/" );
 			console.log( JSON.stringify(state, null, "\t") );
-			console.log( "/*-------------------------------------*/" );
+			console.log( "/*-----------------------------------------*/" );
 			
-			/* Lets have a look at the stack */
-			gdb.stackListFrames( {}, function(state)
-			{
-				/* See status message */
-				console.log( "/*------------STACK FRAMES-------------*/" );
-				console.log( JSON.stringify(state, null, "\t") );
-				console.log( "/*-------------------------------------*/" );
-				gdb.exit();
-			});
+			gdb.command("exit");
+		});
+		
 	});
-});
+	
+	
+}, { location : "bar" } );
 
 ```
 **output when run:**
 ```JSON
-/*----------------NOTIFY---------------*/
+{ name: 'location',
+  required: true,
+  key: '',
+  has_arg: 'argOnly',
+  prefix: ' ',
+  arg_type: [ 'string' ] }
+-break-insert  bar
+/*-------------------NOTIFY----------------*/
 {
 	"state": "thread-group-added",
 	"status": {
 		"id": "i1"
 	}
 }
-/*-------------------------------------*/
+/*-----------------------------------------*/
 GDB>"Reading symbols from ./a.out..."
 GDB>"expanding to full symbols..."
 GDB>"done.\n"
-/*------------BREAK INSERT-------------*/
+/*----------------BREAKPOINT---------------*/
 {
 	"state": "done",
 	"status": {
@@ -152,17 +154,18 @@ GDB>"done.\n"
 		}
 	}
 }
-/*-------------------------------------*/
-/*----------------NOTIFY---------------*/
+/*-----------------------------------------*/
+-exec-run 
+/*-------------------NOTIFY----------------*/
 {
 	"state": "thread-group-started",
 	"status": {
 		"id": "i1",
-		"pid": "28634"
+		"pid": "20479"
 	}
 }
-/*-------------------------------------*/
-/*----------------NOTIFY---------------*/
+/*-----------------------------------------*/
+/*-------------------NOTIFY----------------*/
 {
 	"state": "thread-created",
 	"status": {
@@ -170,8 +173,8 @@ GDB>"done.\n"
 		"group-id": "i1"
 	}
 }
-/*-------------------------------------*/
-/*----------------NOTIFY---------------*/
+/*-----------------------------------------*/
+/*-------------------NOTIFY----------------*/
 {
 	"state": "library-loaded",
 	"status": {
@@ -182,8 +185,8 @@ GDB>"done.\n"
 		"thread-group": "i1"
 	}
 }
-/*-------------------------------------*/
-/*----------------NOTIFY---------------*/
+/*-----------------------------------------*/
+/*-------------------NOTIFY----------------*/
 {
 	"state": "library-loaded",
 	"status": {
@@ -194,8 +197,8 @@ GDB>"done.\n"
 		"thread-group": "i1"
 	}
 }
-/*-------------------------------------*/
-/*----------------NOTIFY---------------*/
+/*-----------------------------------------*/
+/*-------------------NOTIFY----------------*/
 {
 	"state": "breakpoint-modified",
 	"status": {
@@ -217,8 +220,8 @@ GDB>"done.\n"
 		}
 	}
 }
-/*-------------------------------------*/
-/*---------------RUN-------------------*/
+/*-----------------------------------------*/
+/*---------------------RUN-----------------*/
 {
 	"state": "stopped",
 	"status": {
@@ -235,11 +238,12 @@ GDB>"done.\n"
 		},
 		"thread-id": "1",
 		"stopped-threads": "all",
-		"core": "5"
+		"core": "1"
 	}
 }
-/*-------------------------------------*/
-/*------------STACK FRAMES-------------*/
+/*-----------------------------------------*/
+-stack-list-frames 
+/*----------------FRAMES-------------------*/
 {
 	"state": "done",
 	"status": {
@@ -271,8 +275,9 @@ GDB>"done.\n"
 		]
 	}
 }
-/*-------------------------------------*/
-/*----------------NOTIFY---------------*/
+/*-----------------------------------------*/
+-gdb-exit 
+/*-------------------NOTIFY----------------*/
 {
 	"state": "thread-exited",
 	"status": {
@@ -280,15 +285,15 @@ GDB>"done.\n"
 		"group-id": "i1"
 	}
 }
-/*-------------------------------------*/
-/*----------------NOTIFY---------------*/
+/*-----------------------------------------*/
+/*-------------------NOTIFY----------------*/
 {
 	"state": "thread-group-exited",
 	"status": {
 		"id": "i1"
 	}
 }
-/*-------------------------------------*/
+/*-----------------------------------------*/
 GDB closed RET=0
 
 ```
