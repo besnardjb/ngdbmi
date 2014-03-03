@@ -230,7 +230,532 @@ function removeArrayLabels( args )
 	return args;
 }
 
+/*
+ * GDBMI commands meta-description
+ * 
+ * This part is used to decribe commands and their arguments
+ * in a compact way. Thus avoiding a redundant definition
+ * 
+ */
 
+/* This defines a parameter to a GDB/MI command */
+function commandParam( name, required, key, has_arg, arg_type, prefix )
+{
+	
+	/* This allows the checking of an argument value against the
+	 * list of accepted types */
+	commandParam.prototype.check = function( value )
+	{
+		/* Is a value required ? */
+		if( !value || value == "" )
+		{
+			if( (this.arg_type == "keyAndArg") 
+			||  (this.arg_type == "argOnly") )
+			{
+					throw error("Error you must provide a value to arg " + this.name);
+			}
+			 
+			return;
+		}
+		
+		/* Is there a type requirement ? */
+		if( !this.arg_type.length )
+			return;
+		
+		var i = 0;
+		
+		for( i = 0 ; i < this.arg_type.length ; i++ )
+		{
+			/* If a type is required is the candidate present ? */
+			if( typeof(value) == this.arg_type[i].trim() )
+				return;
+		}
+		
+		/* If we are here there was no satisfying candidate */
+		throw "Could not find a matching type for argument";
+	}
+	
+	/* Constructor */
+	
+	/* Name of the argument */
+	this.name = name;
+	/* Is it compulsory ? */
+	this.required = required;
+	/* If present define this arg as prefixed by a flag ==>   -[this.key] this.value */
+	this.key = key,
+	/* Defines how the parameter shall be generated :
+	 * 
+	 * keyOnly:   -[this.key]
+	 * keyAndArg: -[this.key] this.value
+	 * argOnly:   -this.value
+	 */
+	this.has_arg = has_arg;
+	
+	/* Here we just make sure we have a valid input */
+	switch( has_arg )
+	{
+		case "keyOnly":
+		case "keyAndArg":
+		case "argOnly":
+		break;
+		default:
+			throw "Bad arg type";
+	}
+	
+	
+	/* By default the prefix is a simple space */
+	if(!prefix)
+		prefix = " ";
+	
+	/* Prefixing allows the management of more complex cases as the "set"
+	 * one where the format is $[P0]=[P1] by overriding the precceding
+	 * space */
+	this.prefix = prefix;
+	
+	/* This array allows us to call the check method
+	 * which validates an argument value from a list of candidate
+	 * types. If [] no check is done */
+	if( !arg_type )
+		arg_type = [];
+	
+	this.arg_type = arg_type;	
+}
+
+/* This defines a command with a name gdb/mi action and several
+ * parameters. This object is also in charge of
+ * generating the actual call to the gdb/MI */
+function command( name, action_name, params )
+{
+	/* Generate GDB/MI calls */
+	command.prototype.generate = function( args )
+	{
+		if( typeof(args) != "object" )
+			throw "Wrong argument type"
+		
+		/* By defaukt we send back the action */
+		var ret = this.action_name + " ";
+		
+		/* First check that all compulsory args are satisfied */
+		var i;
+		
+		for( i = 0 ; i < this.params.length ; i++ )
+		{
+			if( this.params[i].required && !args[ this.params[i].name ] )
+			{
+				throw "Missing argument " + this.params[i].name + " when calling " + this.name;
+			}
+		}
+		
+		/* Now we can generate in order */
+		for( i = 0 ; i < this.params.length ; i++ )
+		{
+			var par = this.params[i];
+			var value = args[ par.name ];
+			
+			if( value )
+			{
+				console.log( this.params[i] );
+				par.check( value );
+				
+				/* Here we add a prefix in order to manage the "set" case */
+				if( typeof(value) == "string" )
+					value = value.trim();
+				
+				value = par.prefix + value;
+				
+				switch( par.has_arg )
+				{
+					case "keyOnly":
+						if( value )
+							ret += " " + par.key;
+					break;
+					case "keyAndArg":
+						ret += par.key + value;
+					break;
+					case "argOnly":
+						ret += value;
+					break;
+					default:
+						throw "Bad arg type";
+				}	
+			}	
+		}
+		
+		return ret;
+	}
+	
+	
+	/* ############################################## */
+	/* ############################################## */
+	/* Constructor */
+	if( name == "" || typeof(name) != "string" )
+		throw error("Error bad name provided");
+	
+	this.name = name;
+	
+	if( action_name == "" || typeof(action_name) != "string" )
+		throw error("Error action must be a string");
+	
+	this.action_name = action_name;
+
+	if( params.length == undefined )
+		throw error("Error params must be an array");
+	
+	this.params = params;
+}
+
+/* This object is just in charge of generating the basic GDB
+ * function list. It gathers them to allow further calls
+ * by name */
+function commandList()
+{
+	/* Here we store all the commands */
+	this.commandList = {};
+	
+	/* Add a new command */
+	commandList.prototype.insert = function( command )
+	{
+		/* Is it already here ? */
+		if( this.commandList[ command.name ] )
+		{
+			throw error("Pushing command " + command.name + " would shadow a previous registration"); 
+		}
+		
+		/* If not insert it */
+		this.commandList[command.name] = command ;
+	}
+	
+	/* Here we generate a call by firts retrieving command description
+	 * then passing args to the underlying command */
+	commandList.prototype.genCall = function( commandName, args )
+	{
+		var cmd = this.commandList[ commandName ];
+		
+		if( !cmd )
+		{
+			throw "Unknown command " + commandName;
+		}
+		
+		if( !args )
+		{
+			args = {};
+		}
+		
+		if( typeof( args ) != "object" )
+			throw "Wrong argument type";
+		
+		return cmd.generate( args );
+	}
+	/* ############################################## */
+	/* ############################################## */
+	/* Constructor */
+	/* Here we declare all GDB/MI commands */
+
+	/*#######################
+	# Process management    #
+	#######################*/
+
+	this.insert( new command( "execInterrupt" , "-exec-interrupt", [] ) );
+	this.insert( new command( "run" , "-exec-run", [] ) );
+	this.insert( new command( "step" , "-exec-step", [] ) );
+	this.insert( new command( "stepInstruction" , "-exec-step-instruction", [] ) );
+	this.insert( new command( "next" , "-exec-next", [] ) );
+	this.insert( new command( "jump" , "-exec-jump", 
+	[
+		new commandParam( "location", true, "", "argOnly", ["string"] )
+	] ) );
+	this.insert( new command( "execUntil" , "-exec-until", 
+	[
+		new commandParam( "location", true, "", "argOnly", ["string"] )
+	] ) );
+	this.insert( new command( "continue" , "-exec-continue", 
+	[
+		new commandParam( "id", false, "--thread-group", "keyAndArg", ["string", "number"] )
+	] ) );
+	this.insert( new command( "finish" , "-exec-finish", [] ) );
+	
+	/*#######################
+	# Breakpointing         #
+	#######################*/
+	
+	this.insert( new command( "breakAfter" , "-break-after", 
+	[
+		new commandParam( "id", true, "", "argOnly", ["string", "number"] ),
+		new commandParam( "count", true, "", "argOnly", ["string", "number"] )
+	] ) );	
+	this.insert( new command( "breakCommand" , "-break-command", 
+	[
+		new commandParam( "id", true, "", "argOnly", ["string", "number"] ),
+		new commandParam( "command", true, "", "argOnly", ["string"] )
+	] ) );	
+	this.insert( new command( "breakCondition" , "-break-condition", 
+	[
+		new commandParam( "id", true, "", "argOnly", ["string", "number"] ),
+		new commandParam( "expr", true, "", "argOnly", ["string"] )
+	] ) );	
+	this.insert( new command( "breakDelete" , "-break-delete", 
+	[
+		new commandParam( "id", true, "", "argOnly", ["string", "number"] )
+	] ) );
+	this.insert( new command( "breakDisable" , "-break-disable", 
+	[
+		new commandParam( "id", true, "", "argOnly", ["string", "number"] )
+	] ) );
+	this.insert( new command( "breakEnable" , "-break-enable", 
+	[
+		new commandParam( "id", true, "", "argOnly", ["string", "number"] )
+	] ) );
+	this.insert( new command( "breakInfo" , "-break-info", 
+	[
+		new commandParam( "id", true, "", "argOnly", ["string", "number"] )
+	] ) );
+	this.insert( new command( "breakList" , "-break-list", [] ) );
+	this.insert( new command( "breakInsert" , "-break-insert", 
+	[
+		new commandParam( "teporary", false, "-t", "keyOnly", ["number"] ),
+		new commandParam( "hardware", false, "-h", "keyOnly", ["number"] ),
+		new commandParam( "force", false, "-f", "keyOnly", ["number"] ),
+		new commandParam( "disabled", false, "-d", "keyOnly", ["number"] ),
+		new commandParam( "tracepoint", false, "-a", "keyOnly", ["number"] ),
+		new commandParam( "condition", false, "-a", "keyAndArg", ["string"] ),
+		new commandParam( "ignoreCount", false, "-i", "keyAndArg", ["string", "number"] ),
+		new commandParam( "threadId", false, "-p", "keyAndArg", ["string", "number"] ),
+		new commandParam( "location", true, "", "argOnly", ["string"] )
+	] ) );
+	this.insert( new command( "dprintf" , "-dprintf-insert", 
+	[
+		new commandParam( "teporary", false, "-t", "keyOnly", ["number"] ),
+		new commandParam( "force", false, "-f", "keyOnly", ["number"] ),
+		new commandParam( "disabled", false, "-d", "keyOnly", ["number"] ),
+		new commandParam( "condition", false, "-a", "keyAndArg", ["string"] ),
+		new commandParam( "ignoreCount", false, "-i", "keyAndArg", ["string", "number"] ),
+		new commandParam( "threadId", false, "-p", "keyAndArg", ["string", "number"] ),
+		new commandParam( "location", true, "", "argOnly", ["string"] ),
+		new commandParam( "format", true, "", "argOnly", ["string"] )
+	] ) );
+	this.insert( new command( "breakPasscount" , "-break-passcount", 
+	[
+		new commandParam( "id", true, "", "argOnly", ["string", "number"] ),
+		new commandParam( "count", true, "", "argOnly", ["string", "number"] )
+	] ) );	
+	this.insert( new command( "watch" , "-break-watch", 
+	[
+		new commandParam( "read", false, "-r", "keyOnly", ["number"] ),
+		new commandParam( "readWrite", false, "-a", "keyOnly", ["number"] ),
+		new commandParam( "location", true, "", "argOnly", ["string"] )
+	] ) );
+	
+	/*#######################
+	# Catchpoints           #
+	#######################*/
+	
+	this.insert( new command( "catchLoad" , "-catch-load", 
+	[
+		new commandParam( "temporary", false, "-t", "keyOnly", ["number"] ),
+		new commandParam( "disabled", false, "-d", "keyOnly", ["number"] ),
+		new commandParam( "regExp", false, "", "argOnly", ["string"] )
+	] ) );
+	this.insert( new command( "catchUnload" , "-catch-unload", 
+	[
+		new commandParam( "temporary", false, "-t", "keyOnly", ["number"] ),
+		new commandParam( "disabled", false, "-d", "keyOnly", ["number"] ),
+		new commandParam( "regExp", false, "", "argOnly", ["string"] )
+	] ) );
+	
+	/*#######################
+	# Program CTX           #
+	#######################*/	
+	
+	this.insert( new command( "setArg" , "-exec-arguments", 
+	[
+		new commandParam( "arg", true, "", "argOnly", ["string"] )
+	] ) );
+	this.insert( new command( "setWorkingDirectory" , "-environment-cd", 
+	[
+		new commandParam( "path", true, "", "argOnly", ["string"] )
+	] ) );
+	this.insert( new command( "setSourcePath" , "-environment-directory", 
+	[
+		new commandParam( "reset", false, "-r", "keyOnly", ["number"] ),
+		new commandParam( "path", true, "", "argOnly", ["string"] )
+	] ) );
+	this.insert( new command( "setObjectPath" , "-environment-path", 
+	[
+		new commandParam( "reset", false, "-r", "keyOnly", ["number"] ),
+		new commandParam( "path", true, "", "argOnly", ["string"] )
+	] ) );
+	this.insert( new command( "pwd" , "-environment-pwd", []));
+
+	/*#######################
+	# Thread Management     #
+	#######################*/
+	
+	this.insert( new command( "threadInfo" , "-thread-info", 
+	[
+		new commandParam( "id", false, "", "argOnly", ["string", "number"] )
+	] ) );
+	this.insert( new command( "threadListIds" , "-thread-list-ids", []));
+	this.insert( new command( "threadSelect" , "-thread-select", 
+	[
+		new commandParam( "id", true, "", "argOnly", ["string", "number"] )
+	] ) );
+
+	/*#######################
+	# Frames Management     #
+	#######################*/
+	
+	this.insert( new command( "frame" , "-stack-info-frame", []));
+	this.insert( new command( "stackDepth" , "-stack-info-depth", 
+	[
+		new commandParam( "maxDepth", false, "", "argOnly", ["string", "number"] )
+	] ) );
+	this.insert( new command( "stackListArguments" , "-stack-list-arguments", 
+	[
+		new commandParam( "skip", false, "--skip-unavailable", "keyOnly", ["number"] ),
+		new commandParam( "print", true, "", "argOnly", ["number"] ),
+		new commandParam( "frameBoundaries", false, "", "argOnly", ["string"] )
+	] ) );
+	this.insert( new command( "stackListFrames" , "-stack-list-frames", 
+	[
+		new commandParam( "frameBoundaries", false, "", "argOnly", ["string"] )
+	] ) );
+	this.insert( new command( "stackListLocals" , "-stack-list-locals", 
+	[
+		new commandParam( "skip", false, "--skip-unavailable", "keyOnly", ["number"] ),
+		new commandParam( "print", true, "", "argOnly", ["number"] )
+	] ) );
+	this.insert( new command( "stackListVariables" , "-stack-list-variables", 
+	[
+		new commandParam( "skip", false, "--skip-unavailable", "keyOnly", ["number"] ),
+		new commandParam( "print", true, "", "argOnly", ["number"] )
+	] ) );
+	this.insert( new command( "frameSelect" , "-stack-select-frame", 
+	[
+		new commandParam( "id", true, "", "argOnly", ["number","string"] )
+	] ) );
+
+	/*#######################
+	# TODO VARIABLE         #
+	#######################*/
+
+	/*#######################
+	# TODO DATA             #
+	#######################*/
+
+	/*#######################
+	# TODO TRACEPOINT       #
+	#######################*/
+
+	/*#######################
+	# Symbol query          #
+	#######################*/
+	
+	this.insert( new command( "symbolList" , "-symbol-list-lines", 
+	[
+		new commandParam( "filename", true, "", "argOnly", ["string"] )
+	] ) );
+
+	/*#######################
+	# File commands         #
+	#######################*/
+	
+	this.insert( new command( "executableAndSymbols" , "-file-exec-and-symbols", 
+	[
+		new commandParam( "filename", true, "", "argOnly", ["string"] )
+	] ) );	
+	this.insert( new command( "executable" , "-file-exec-file", 
+	[
+		new commandParam( "filename", true, "", "argOnly", ["string"] )
+	] ) );	
+	this.insert( new command( "symbols" , "-file-symbol-file", 
+	[
+		new commandParam( "filename", true, "", "argOnly", ["string"] )
+	] ) );	
+	this.insert( new command( "sourceCtx" , "-file-list-exec-source-file", [] ) );
+	this.insert( new command( "listSourceFiles" , "-file-list-exec-source-files", [] ) );
+	
+	/*#######################
+	# Target manipulation   #
+	#######################*/	
+
+	this.insert( new command( "attach" , "-target-attach", 
+	[
+		new commandParam( "target", true, "", "argOnly", ["number","string"] )
+	] ) );	
+	this.insert( new command( "detach" , "-target-detach", 
+	[
+		new commandParam( "target", true, "", "argOnly", ["number","string"] )
+	] ) );	
+	this.insert( new command( "disconnect" , "-target-disconnect", [] ) );
+	this.insert( new command( "download" , "-target-download", [] ) );
+	this.insert( new command( "targetSelect" , "-target-select", 
+	[
+		new commandParam( "type", true, "", "argOnly", ["string"] ),
+		new commandParam( "param", true, "", "argOnly", ["string"] )
+	] ) );
+	
+	/*######################
+	#  TODO FILE TRANSFER  #
+	######################*/
+	
+	/*#######################
+	# Support Commands      #
+	#######################*/
+	
+	this.insert( new command( "commandExists" , "-info-gdb-mi-command", 
+	[
+		new commandParam( "command", true, "", "argOnly", ["string"] )
+	] ) );	
+	this.insert( new command( "listFeature" , "-list-features", [] ) );
+	this.insert( new command( "listTargetFeature" , "-list-target-features", [] ) );
+
+	/*#######################
+	# Misc Commands         #
+	#######################*/
+	
+	this.insert( new command( "exit" , "-gdb-exit", [] ) );
+	this.insert( new command( "set" , "-gdb-set", 
+	[
+		new commandParam( "name", true, "", "argOnly", ["string"] , " $"),
+		new commandParam( "value", true, "", "argOnly", ["string"], "=" )
+	] ) );
+	this.insert( new command( "show" , "-target-select", 
+	[
+		new commandParam( "name", true, "", "argOnly", ["string"] )
+	] ) );
+	this.insert( new command( "version" , "-gdb-version", [] ) );
+	this.insert( new command( "listThreadGroups" , "-list-thread-groups", 
+	[
+		new commandParam( "available", false, "--available", "keyOnly", ["number"] ),
+		new commandParam( "recurse", false, "--recurse", "keyOnly", ["number"] ),
+		new commandParam( "group", false, "", "argOnly", ["string","number"] )
+	] ) );
+	this.insert( new command( "os" , "-info-os", 
+	[
+		new commandParam( "type", false, "", "argOnly", ["string"] )
+	] ) );
+	this.insert( new command( "addInferior" , "-add-inferior", [] ) );
+	this.insert( new command( "exec" , "-interpreter-exec", 
+	[
+		new commandParam( "interpreter", true, "", "argOnly", ["string"] , " $"),
+		new commandParam( "command", true, "", "argOnly", ["string"], "=" )
+	] ) );
+	this.insert( new command( "ttySet" , "-inferior-tty-set", 
+	[
+		new commandParam( "tty", true, "", "argOnly", ["string"] )
+	] ) );
+	this.insert( new command( "ttyShow" , "-inferior-tty-show", [] ) );
+	this.insert( new command( "enableTimings" , "-enable-timings", 
+	[
+		new commandParam( "value", false, "", "argOnly", ["number"] )
+	] ) );
+}
+
+/* This is the main gdbmi instance
+ * 
+ * 	It gathers a commandList and a debugger instance.
+ * 
+ *  */
 function gdbMI( command_and_args, options, gdbWrapper )
 {
 	/* ############################################## */
@@ -497,990 +1022,67 @@ function gdbMI( command_and_args, options, gdbWrapper )
 	*
 	*****************************************************/
 
-	/*#######################
-	# Process management    #
-	#######################*/
-
-	gdbMI.prototype.execInterrupt = function ( handler)
+	this.commands = new commandList();
+	
+	gdbMI.prototype.command = function( name, handler, args )
 	{
-		this.command("-exec-interrupt", handler);
+		var ret = "";
+		
+		/* Handle the interupt case */
+		if( name.trim() == "interrupt" )
+		{
+			var pid = undefined;
+			
+			if( args )
+				pid = args[ "pid" ];
+			
+			this.interrupt( pid, handler );
+			return;
+		}
+		/* *************************** */
+		
+		ret = this.commands.genCall( name, args );
+		
+		console.log( ret );
+		
+		this.sendcommand( ret, handler );
 	}
 
+	/* The interrupt action is still handled by gdbMI */
 	gdbMI.prototype.interrupt = function (pid, handler)
 	{
-		this.command("", handler );
-		
-		/* Here we send the signal by hand (it seems more reliable)
-		 * there is maybe a mismatch with node which is mixed up
-		 * so we retrive the pid upon thread group start in order
-		 * to kill it later (SIGINT)
-		 * 
-		 * TODO find a cleaner versiojn using -process-interrupt ? 
-		 * 
-		 * this.command("-exec-interrupt", handler);
-		 * */
-		var i;
+		   this.command("", handler );
+		   
+		   /* Here we send the signal by hand (it seems more reliable)
+			* there is maybe a mismatch with node which is mixed up
+			* so we retrive the pid upon thread group start in order
+			* to kill it later (SIGINT)
+			* 
+			* TODO find a cleaner versiojn using -process-interrupt ? 
+			* 
+			* this.command("-exec-interrupt", handler);
+			* */
+		   var i;
 
-		for( i = 0 ; i < this.pid_list.length; i++ )
-		{
-			if( !pid )
-			{
-				this.wrapper.interrupt( this.pid_list[i] );
-			}
-			else
-			{
-				/* Make sure that we can only interrupt processes
-				 * which are in the 'children' thread group list */
-				if( this.pid_list[i] == pid )
-				{
-					this.wrapper.interrupt( this.pid_list[i] );
-				}
-			}
-		}
-	}
-
-	gdbMI.prototype.run = function (handler)
-	{
-		this.command("-exec-run", handler);
-	}
-	
-	gdbMI.prototype.continue = function (handler)
-	{
-		this.command("-exec-continue", handler);
-	}
-	
-	gdbMI.prototype.finish = function (handler)
-	{
-		this.command("-exec-finish", handler);
-	}
-	
-	gdbMI.prototype.step = function (handler)
-	{
-		this.command("-exec-step", handler);
-	}
-	
-	gdbMI.prototype.stepInstruction = function (handler)
-	{
-		this.command("-exec-step-instruction", handler);
-	}
-	
-	gdbMI.prototype.next = function (handler)
-	{
-		this.command("-exec-next", handler);
-	}
-	
-	gdbMI.prototype.nextInstruction = function (handler)
-	{
-		this.command("-exec-next-instruction", handler);
-	}
-	
-	gdbMI.prototype.retrun = function (handler)
-	{
-		this.command("-exec-return", handler);
-	}
-	
-	gdbMI.prototype.jump = function (location, handler)
-	{
-		if( typeof(location) != 'string' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		this.command("-exec-jump " + location, handler);
-	}
-	
-	gdbMI.prototype.execUntil = function (location, handler)
-	{
-		if( typeof(location) != 'string' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		this.command("-exec-until " + location, handler);
-	}
-
-	/*#######################
-	# Breakpointing         #
-	#######################*/	
-	
-	gdbMI.prototype.breakAfter = function (number, count , handler)
-	{
-		if( typeof(number) != 'string' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		if( typeof(count) != 'string' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		this.command("-break-after " + number + " " + count , handler);
-	}
-	
-	gdbMI.prototype.breakCommand = function (number, commands , handler)
-	{
-		if( typeof(number) != 'string' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		if( typeof(commands) != 'string' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		this.command("-break-command " + number + " " + commands , handler);
-	}
-		
-	gdbMI.prototype.breakCondition = function (number, expr , handler)
-	{
-		if( typeof(number) != 'string' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		if( typeof(expr) != 'string' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		this.command("-break-condition " + number + " " + expr , handler);
-	}
-	
-			
-	gdbMI.prototype.breakDelete = function (numbers , handler)
-	{
-		if( typeof(numbers) != 'string' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		this.command("-break-delete " + numbers , handler);
-	}
-			
-	gdbMI.prototype.breakDisable = function (numbers , handler)
-	{
-		if( typeof(numbers) != 'string' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		this.command("-break-disable " + numbers , handler);
-	}
-			
-	gdbMI.prototype.breakEnable = function (numbers , handler)
-	{
-		if( typeof(numbers) != 'string' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		this.command("-break-enable " + numbers , handler);
-	}
-		
-	gdbMI.prototype.breakInfo = function (number , handler)
-	{
-		if( typeof(number) != 'string' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		this.command("-break-info " + number , handler);
-	}
-		
-	gdbMI.prototype.breakList = function ( handler)
-	{
-
-		this.command("-break-list" , handler);
-	}
-
-	gdbMI.prototype.breakInsert = function (location, options , handler)
-	{
-		if( typeof(location) != 'string' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		if( typeof(options) != 'object' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		/* Lets parse options */
-		var args = "";
-		
-		if( options.temporary == true )
-		{
-			args += " -t";
-		}
-		
-		if( options.hardware == true )
-		{
-			args += " -h";
-		}
-		
-		if( options.force == true )
-		{
-			args += " -f";
-		}
-		
-		if( options.disabled == true )
-		{
-			args += " -d";
-		}
-		
-		if( options.tracepoint == true )
-		{
-			args += " -a";
-		}
-		
-		if( options.condition )
-		{
-			if( typeof(options.condition) != 'string' )
-				throw("Wrong argument type");
-			
-			args += " -c " + options.condition;
-		}
-		
-		if( options.ingnoreCount )
-		{
-			if( typeof(options.ingnoreCount) != 'string' )
-				throw("Wrong argument type");
-			
-			args += " -i " + options.ingnoreCount;
-		}
-		
-		if( options.threadId )
-		{
-			if( typeof(options.threadId) != 'string' )
-				throw("Wrong argument type");
-			
-			args += " -p " + options.threadId;
-		}
-		
-		this.command("-break-insert " + args + " " + location , handler);
-	}
-
-
-	gdbMI.prototype.dprintf = function (location, format, arguments, options , handler)
-	{
-		if( typeof(location) != 'string' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		if( typeof(format) != 'string' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		if( typeof(arguments) != 'string' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		if( typeof(options) != 'object' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		/* Lets parse options */
-		var args = "";
-		
-		if( options.temporary == true )
-		{
-			args += " -t";
-		}
-
-		if( options.force == true )
-		{
-			args += " -f";
-		}
-		
-		if( options.disabled == true )
-		{
-			args += " -d";
-		}
-
-		if( options.condition )
-		{
-			if( typeof(options.condition) != 'string' )
-				throw("Wrong argument type");
-			
-			args += " -c " + options.condition;
-		}
-		
-		if( options.ingnoreCount )
-		{
-			if( typeof(options.ingnoreCount) != 'string' )
-				throw("Wrong argument type");
-			
-			args += " -i " + options.ingnoreCount;
-		}
-		
-		if( options.threadId )
-		{
-			if( typeof(options.threadId) != 'string' )
-				throw("Wrong argument type");
-			
-			args += " -p " + options.threadId;
-		}
-		
-		this.command("-dprintf-insert " + args + " " + location + " " + format + " " +  arguments, handler);
-	}
-			
-	gdbMI.prototype.breakPasscount = function (number, passcount, handler)
-	{
-		if( typeof(number) != 'string' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		if( typeof(passcount) != 'string' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		this.command("-break-passcount " + number + " " + passcount , handler);
-	}
-	
-			
-	gdbMI.prototype.watch = function (location, mode, handler)
-	{
-		if( typeof(location) != 'string' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		/* By default we are in write mode */
-		var arg = "";
-		
-		switch( mode )
-		{
-			case "rw":
-				args = " -a";
-			break;
-			case "r":
-				args = " -r";
-			break;
-		}
-		
-		this.command("-break-watch " + mode + " " + location , handler);
-	}
-
-	/*#######################
-	# Catchpoints           #
-	#######################*/		
-	
-	gdbMI.prototype.catchLoad = function (regexp, options, handler)
-	{
-		if( typeof(regexp) != 'string' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		if( typeof(options) != 'object' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		var args = "";
-		
-		if( options.temporary == true )
-			args += " -t";
-		
-		if( options.disabled == true )
-			args += " -d";
-	
-		this.command("-catch-load " + args + " " + regexp , handler);
-	}
-	
-	gdbMI.prototype.catchUnload = function (regexp, options, handler)
-	{
-		if( typeof(regexp) != 'string' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		if( typeof(options) != 'object' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		var args = "";
-		
-		if( options.temporary == true )
-			args += " -t";
-		
-		if( options.disabled == true )
-			args += " -d";
-	
-		this.command("-catch-unload " + args + " " + regexp , handler);
-	}
-
-	/*#######################
-	# Program CTX           #
-	#######################*/	
-	 
-	gdbMI.prototype.setArgs = function (args , handler)
-	{
-		if( typeof(args) != 'string' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		this.command("-exec-arguments " + args , handler);
-	} 
-	 
-	gdbMI.prototype.setWorkingDirectory = function (wdir , handler)
-	{
-		if( typeof(wdir) != 'string' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		this.command("-environment-cd " + wdir , handler);
-	} 
-	 	
-	 
-	gdbMI.prototype.setSourcePath= function (paths, reset, handler)
-	{
-		if( typeof(paths) != 'string' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		var args = "";
-		
-		if( reset )
-		{
-			args += " -r";
-		}
-		
-		this.command("-environment-directory " + args + " " + paths , handler);
-	} 
-	 
-	gdbMI.prototype.setObjectPath= function (paths, reset, handler)
-	{
-		if( typeof(paths) != 'string' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		var args = "";
-		
-		if( reset )
-		{
-			args += " -r";
-		}
-		
-		this.command("-environment-path " + args + " " + paths , handler);
-	} 
-	 
-	gdbMI.prototype.pwd= function ( handler)
-	{	
-		this.command("-environment-pwd" , handler);
-	}
-
-	/*#######################
-	# Thread Management     #
-	#######################*/	
-	
-	gdbMI.prototype.threadInfo= function (id, handler)
-	{
-		var args = "";
-		
-		if( id )
-		{
-			if( typeof(id) != 'string' && typeof(id) != 'number' )
-			{
-				throw("Wrong argument type");
-			}
-			
-			args = id;
-		}
-		
-		this.command("-thread-info " + args , handler);
-	} 
-	 
-	gdbMI.prototype.threadListIds= function (id, handler)
-	{
-		this.command("-thread-list-ids" , handler);
-	}
-	
-	gdbMI.prototype.threadSelect = function (id , handler)
-	{
-		if( typeof(id) != 'string' && typeof(id) != 'number' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		this.command("-thread-select " + id , handler);
-	} 
-
-	/*#######################
-	# Frames Management     #
-	#######################*/
-	 
-	gdbMI.prototype.frame = function ( handler)
-	{
-		this.command("-stack-info-frame" , handler);
-	}
-	 
-	gdbMI.prototype.stackDepth = function (maxDepth, handler)
-	{
-		var args = "";
-		
-		if( maxDepth )
-		{
-			if( typeof(maxDepth) != 'string' && typeof(maxDepth) != 'number' )
-			{
-				throw("Wrong argument type");
-			}
-				
-			args = maxDepth;
-		}
-		
-		this.command("-stack-info-depth " + args , handler);
-	}
-	
-	gdbMI.prototype.stackListArguments = function (printValues, options, handler)
-	{
-		var print = "";
-		
-		if( printValues == undefined )
-		{
-			throw("Wrong argument type");
-		}
-		
-		if( printValues )
-		{
-			print = 1;
-		}
-		else
-		{
-			print = 0;
-		}
-		
-		if( typeof(options) != 'object' )
-		{
-			throw("Wrong argument type");
-		}	
-		
-		var skip = "";
-		
-		if( options.skipUnavailable == true )
-		{
-			skip = "--skip-unavailable";
-		}
-
-		var lf = "";
-		var hf = "";
-
-		if( options.lowFrame )
-		{
-			if( typeof(options.lowFrame) != 'number' )
-				throw("Wrong argument type");
-			
-			lf = options.lowFrame;
-		}
-
-		if( options.highFrame )
-		{
-			if( typeof(options.highFrame) != 'number' )
-				throw("Wrong argument type");
-			
-			hf = options.highFrame;
-		}
-		
-		this.command("-stack-list-arguments " + skip + " " + print + " " + lf + " " + hf, handler);
-	}
-
-	gdbMI.prototype.stackListFrames = function (options, handler)
-	{
-		if( typeof(options) != 'object' )
-		{
-			throw("Wrong argument type");
-		}
-
-		var lf = "";
-		var hf = "";
-
-		if( options.lowFrame )
-		{
-			if( typeof(options.lowFrame) != 'number' )
-				throw("Wrong argument type");
-			
-			lf = options.lowFrame;
-		}
-
-		if( options.highFrame )
-		{
-			if( typeof(options.highFrame) != 'number' )
-				throw("Wrong argument type");
-			
-			hf = options.highFrame;
-		}
-		
-		this.command("-stack-list-frames " + lf + " " + hf, handler);
+		   for( i = 0 ; i < this.pid_list.length; i++ )
+		   {
+				   if( !pid )
+				   {
+						   this.wrapper.interrupt( this.pid_list[i] );
+				   }
+				   else
+				   {
+						   /* Make sure that we can only interrupt processes
+							* which are in the 'children' thread group list */
+						   if( this.pid_list[i] == pid )
+						   {
+								   this.wrapper.interrupt( this.pid_list[i] );
+						   }
+				   }
+		   }
 	}
 
 	
-	gdbMI.prototype.stackListLocals = function (printValues, options, handler)
-	{
-		var print = "";
-		
-		if( printValues == undefined )
-		{
-			throw("Wrong argument type");
-		}
-		
-		if( printValues )
-		{
-			print = 1;
-		}
-		else
-		{
-			print = 0;
-		}
-		
-		if( typeof(options) != 'object' )
-		{
-			throw("Wrong argument type");
-		}	
-		
-		var skip = "";
-		
-		if( options.skipUnavailable == true )
-		{
-			skip = "--skip-unavailable";
-		}
-		
-		this.command("-stack-list-locals " + skip + " " + print, handler);
-	}
-	
-	gdbMI.prototype.stackListVariables = function (printValues, options, handler)
-	{
-		var print = "";
-		
-		if( printValues == undefined )
-		{
-			throw("Wrong argument type");
-		}
-		
-		if( printValues )
-		{
-			print = 1;
-		}
-		else
-		{
-			print = 0;
-		}
-		
-		if( typeof(options) != 'object' )
-		{
-			throw("Wrong argument type");
-		}	
-		
-		var skip = "";
-		
-		if( options.skipUnavailable == true )
-		{
-			skip = "--skip-unavailable";
-		}
-		
-		this.command("-stack-list-variables " + skip + " " + print, handler);
-	}
-
-	gdbMI.prototype.frameSelect = function (id , handler)
-	{
-		if( typeof(id) != 'string' && typeof(id) != 'number' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		this.command("-stack-select-frame " + id , handler);
-	} 
-	
-	/*#######################
-	# TODO VARIABLE         #
-	#######################*/
-
-	/*#######################
-	# TODO DATA             #
-	#######################*/
-
-	/*#######################
-	# TODO TRACEPOINT       #
-	#######################*/
-
-	/*#######################
-	# Symbol query          #
-	#######################*/
-	 
-	gdbMI.prototype.symbolList = function (filename , handler)
-	{
-		if( typeof(filename) != 'string' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		this.command("-symbol-list-lines " + filename , handler);
-	} 
-
-	/*#######################
-	# File commands         #
-	#######################*/
-
-	gdbMI.prototype.executableAndSymbols = function (filename , handler)
-	{
-		if( typeof(filename) != 'string' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		this.command("-file-exec-and-symbols " + filename , handler);
-	}
-	
-	gdbMI.prototype.executable = function (filename , handler)
-	{
-		if( typeof(filename) != 'string' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		this.command("-file-exec-file " + filename , handler);
-	}
-	
-	gdbMI.prototype.symbols = function (symbolfile , handler)
-	{
-		if( typeof(symbolfile) != 'string' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		this.command("-file-symbol-file " + symbolfile , handler);
-	}
-	
-	gdbMI.prototype.sourceCtx = function (handler)
-	{
-		this.command("-file-list-exec-source-file" , handler);
-	}
-	
-	gdbMI.prototype.listSourceFiles = function (handler)
-	{
-		this.command("-file-list-exec-source-files" , handler);
-	}
-
-	/*#######################
-	# Target manipulation   #
-	#######################*/
- 
-	gdbMI.prototype.attach = function (pidorfile , handler)
-	{
-		if( typeof(pidorfile) != 'string' && typeof(pidorfile) != 'number' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		this.command("-target-attach " + pidorfile , handler);
-	} 
-  
-	gdbMI.prototype.detach = function (pid , handler)
-	{
-		if( typeof(pid) != 'string' && typeof(pid) != 'number' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		this.command("-target-detach " + pid , handler);
-	}
-
-	gdbMI.prototype.disconnect = function ( handler)
-	{	
-		this.command("-target-disconnect" , handler);
-	} 
-
-	gdbMI.prototype.download = function ( handler)
-	{	
-		this.command("-target-download" , handler);
-	} 
-
-	gdbMI.prototype.targetSelect = function ( type, params, handler)
-	{
-		if( typeof(type) != 'string' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		if( typeof(params) != 'string' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		this.command("-target-select " + type + " " + params , handler);
-	}
-	
-	/*######################
-	#  TODO FILE TRANSFER  #
-	######################*/
-	
-	/*#######################
-	# Support Commands      #
-	#######################*/	
-
-	gdbMI.prototype.commandExists = function (commandWithNoDash , handler)
-	{
-		if( typeof(commandWithNoDash) != 'string' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		this.command("-info-gdb-mi-command " + commandWithNoDash , handler);
-	} 	
-
-	gdbMI.prototype.listFeature = function (handler)
-	{
-		this.command("-list-features" , handler);
-	} 	
-
-	gdbMI.prototype.listTargetFeature = function (handler)
-	{
-		this.command("-list-target-features" , handler);
-	} 	
-
-	/*#######################
-	# Misc Commands         #
-	#######################*/	
-	
-	gdbMI.prototype.exit = function (handler)
-	{
-		this.command("-gdb-exit" , handler);
-	} 		
-
-	gdbMI.prototype.set = function ( name, value, handler)
-	{
-		if( typeof(name) != 'string' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		if( typeof(value) != 'string' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		this.command("-gdb-set $" + name.trim() + "=\"" + value.trim() + "\"" , handler);
-	}
-	
-	gdbMI.prototype.show = function ( name , handler)
-	{
-		if( typeof(name) != 'string' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		this.command("-gdb-show " + name , handler);
-	}
-	
-	gdbMI.prototype.version = function (handler)
-	{
-		this.command("-gdb-version" , handler);
-	} 	
-	
-	gdbMI.prototype.listThreadGroups = function (options, handler)
-	{
-		if( typeof(options) != 'object' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		var args = "";
-		
-		if( options.available == true )
-		{
-			args += " --available";
-		}
-		
-		if( options.recurse == true )
-		{
-			args += " --recurse";
-		}
-		
-		var groups = "";
-		
-		if( options.groups )
-		{
-			if( typeof(options.groups) != 'string' )
-			{
-				throw("Wrong argument type");
-			}
-			
-			groups = options.groups;
-		}
-		
-		this.command("-list-thread-groups " + args + " " + groups, handler);
-	}
-
-	
-	gdbMI.prototype.os = function ( type, handler)
-	{
-		if( typeof(type) != 'string' )
-		{
-			throw("Wrong argument type");
-		}
-			
-		this.command("-info-os " + type , handler);
-	} 		
-	
-	gdbMI.prototype.addInferior = function ( handler)
-	{	
-		this.command("-add-inferior" , handler);
-	} 		
-	
-	gdbMI.prototype.exec = function ( interpreter, command, handler)
-	{
-		if( typeof(interpreter) != 'string' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		if( typeof(command) != 'string' )
-		{
-			throw("Wrong argument type");
-		}
-		
-		this.command("-interpreter-exec " + interpreter + " " + command , handler);
-	} 
-		
-	gdbMI.prototype.ttySet = function ( tty, handler)
-	{
-		if( typeof(tty) != 'string' )
-		{
-			throw("Wrong argument type");
-		}
-			
-		this.command("-inferior-tty-set " + tty , handler);
-	}
-	
-	gdbMI.prototype.ttyShow = function ( handler)
-	{	
-		this.command("-inferior-tty-show" , handler);
-	} 			
-	
-	gdbMI.prototype.enableTimings = function ( truth, handler)
-	{
-		var t = "yes";
-		
-		if( !truth )
-		{
-			t = "no";
-		}
-		
-		this.command("-enable-timings " + t , handler);
-	} 			
-		
 	/*######################*/
 	/*######################*/
 	/*######################*/
@@ -1502,7 +1104,7 @@ function gdbMI( command_and_args, options, gdbWrapper )
 	}
 	
 	/* Handlers management */
-	gdbMI.prototype.command = function( command, handler )
+	gdbMI.prototype.sendcommand = function( command, handler )
 	{
 		this.gdb_state.state = "command";
 		this.gdb_state.status = {};
