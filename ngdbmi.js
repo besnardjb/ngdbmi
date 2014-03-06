@@ -1016,7 +1016,7 @@ function gdbMI( command_and_args, options, gdbWrapper )
 		
 		var line_descriptor = fullline[0];
 		
-		console.log(fullline);
+		//console.log(fullline);
 
 		var line = fullline.slice(1);
 		
